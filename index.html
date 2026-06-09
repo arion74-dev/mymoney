@@ -209,27 +209,48 @@
   function persist() { localStorage.setItem('wl', JSON.stringify(watchlist)); }
 
   // ──────────────────────────────────────────────────
-  // 가격 API (Yahoo Finance)
+  // 가격 API (Yahoo Finance v7 quote + CORS 프록시 폴백)
   // ──────────────────────────────────────────────────
-  async function fetchPrice(symbol) {
+
+  // 직접 호출 실패 시 corsproxy.io 경유
+  async function yFetch(url) {
     try {
-      const r = await fetch(
-        `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1m&range=1d`
-      );
-      if (!r.ok) return null;
-      const j  = await r.json();
-      const m  = j?.chart?.result?.[0]?.meta;
-      if (!m) return null;
-      const price = m.regularMarketPrice;
-      const prev  = m.chartPreviousClose ?? m.previousClose;
-      if (!price || !prev) return null;
-      return {
+      const r = await fetch(url);
+      if (r.ok) return r.json();
+    } catch {}
+    try {
+      const r = await fetch(`https://corsproxy.io/?${encodeURIComponent(url)}`);
+      if (r.ok) return r.json();
+    } catch {}
+    return null;
+  }
+
+  // 여러 심볼을 한 번에 조회 (배치) → { symbol: priceData }
+  async function fetchPriceBatch(symbols) {
+    if (!symbols.length) return {};
+    const url = `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${
+      symbols.map(encodeURIComponent).join(',')
+    }&fields=regularMarketPrice,regularMarketPreviousClose,currency`;
+    const j = await yFetch(url);
+    const map = {};
+    for (const q of j?.quoteResponse?.result ?? []) {
+      const price = q.regularMarketPrice;
+      const prev  = q.regularMarketPreviousClose;
+      if (!price || !prev) continue;
+      map[q.symbol] = {
         price,
-        change : price - prev,
-        pct    : ((price - prev) / prev) * 100,
-        currency: m.currency || 'USD',
+        change  : price - prev,
+        pct     : ((price - prev) / prev) * 100,
+        currency: q.currency || 'USD',
       };
-    } catch { return null; }
+    }
+    return map;
+  }
+
+  // 단일 심볼 조회 (관심종목 관리 화면에서 사용)
+  async function fetchPrice(symbol) {
+    const m = await fetchPriceBatch([symbol]);
+    return m[symbol] ?? null;
   }
 
   // ──────────────────────────────────────────────────
@@ -266,9 +287,9 @@
   async function renderGrid(indices, gridId) {
     const el = document.getElementById(gridId);
     el.innerHTML = skeletons(indices.length);
-    const res = await Promise.allSettled(indices.map(i => fetchPrice(i.symbol)));
-    el.innerHTML = indices.map((idx, i) =>
-      priceCard(idx.name, res[i].status === 'fulfilled' ? res[i].value : null)
+    const prices = await fetchPriceBatch(indices.map(i => i.symbol));
+    el.innerHTML = indices.map(idx =>
+      priceCard(idx.name, prices[idx.symbol] ?? null)
     ).join('');
   }
 
@@ -282,9 +303,9 @@
       return;
     }
     el.innerHTML = skeletons(watchlist.length);
-    const res = await Promise.allSettled(watchlist.map(w => fetchPrice(w.symbol)));
-    el.innerHTML = watchlist.map((w, i) =>
-      priceCard(w.name, res[i].status === 'fulfilled' ? res[i].value : null)
+    const prices = await fetchPriceBatch(watchlist.map(w => w.symbol));
+    el.innerHTML = watchlist.map(w =>
+      priceCard(w.name, prices[w.symbol] ?? null)
     ).join('');
   }
 
