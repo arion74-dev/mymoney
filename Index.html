@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>주가 지수 정보</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    .pulse { animation: pulse 1.5s ease-in-out infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.25} }
+    .fade-in { animation: fadeIn .25s ease; }
+    @keyframes fadeIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+  </style>
+</head>
+<body class="bg-gray-950 text-white min-h-screen">
+
+  <!-- ═══════════════════════════════════════════
+       메인 화면
+  ════════════════════════════════════════════ -->
+  <div id="v-main">
+    <div class="max-w-md mx-auto px-4 py-6">
+
+      <!-- 헤더 -->
+      <div class="flex items-center justify-between mb-6">
+        <h1 class="text-xl font-bold tracking-tight">📈 주가 지수 정보</h1>
+        <div class="flex items-center gap-2">
+          <span id="update-time" class="text-xs text-gray-500"></span>
+          <button onclick="handleRefresh()" title="새로고침"
+                  class="text-gray-500 hover:text-white text-base transition-colors">↻</button>
+        </div>
+      </div>
+
+      <!-- 미국 주요 지표 -->
+      <section class="mb-6">
+        <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-3">
+          🇺🇸 미국 주요 지표
+        </h2>
+        <div id="us-grid" class="grid grid-cols-3 gap-2"></div>
+      </section>
+
+      <!-- 국내 주요 지표 -->
+      <section class="mb-6">
+        <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-3">
+          🇰🇷 국내 주요 지표
+        </h2>
+        <div id="kr-grid" class="grid grid-cols-3 gap-2"></div>
+      </section>
+
+      <!-- 관심 종목 -->
+      <section>
+        <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-3">
+          ⭐ 관심 종목
+        </h2>
+        <div id="wl-grid" class="grid grid-cols-3 gap-2"></div>
+        <div class="mt-5 text-center">
+          <button onclick="nav('v-manage')"
+                  class="text-sm text-gray-300 hover:text-white border border-gray-700 hover:border-gray-500
+                         rounded-full px-7 py-2 transition-colors">
+            관심종목
+          </button>
+        </div>
+      </section>
+
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       관심종목 관리 화면
+  ════════════════════════════════════════════ -->
+  <div id="v-manage" class="hidden fixed inset-0 bg-gray-950 overflow-y-auto z-10">
+    <div class="max-w-md mx-auto px-4 py-6">
+
+      <div class="flex items-center mb-6">
+        <button onclick="nav('v-main')" class="text-gray-400 hover:text-white mr-3 text-lg">‹</button>
+        <h2 class="text-lg font-bold flex-1">관심종목 관리</h2>
+      </div>
+
+      <div id="manage-list" class="space-y-2"></div>
+
+      <div class="mt-6 text-center">
+        <button onclick="nav('v-add')"
+                class="text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-full px-7 py-2 transition-colors">
+          관심종목 추가
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       관심종목 추가 화면
+  ════════════════════════════════════════════ -->
+  <div id="v-add" class="hidden fixed inset-0 bg-gray-950 overflow-y-auto z-20">
+    <div class="max-w-md mx-auto px-4 py-6">
+
+      <div class="flex items-center mb-6">
+        <button onclick="nav('v-manage')" class="text-gray-400 hover:text-white mr-3 text-lg">‹</button>
+        <h2 class="text-lg font-bold flex-1">관심종목 추가</h2>
+      </div>
+
+      <!-- 검색창 -->
+      <div class="flex gap-2 mb-4">
+        <input id="search-input" type="text"
+               placeholder="종목명 또는 종목코드 입력"
+               class="flex-1 bg-gray-800 border border-gray-700 focus:border-blue-500 outline-none
+                      rounded-xl px-4 py-2.5 text-sm transition-colors"
+               oninput="debouncedSearch(this.value)"
+               onkeydown="if(event.key==='Enter') doSearch()">
+        <button onclick="doSearch()"
+                class="bg-blue-600 hover:bg-blue-500 rounded-xl px-4 transition-colors text-base">
+          🔍
+        </button>
+      </div>
+
+      <div id="search-results" class="space-y-2"></div>
+
+      <div class="mt-6 text-center">
+        <button onclick="confirmAdd()"
+                class="text-sm bg-green-600 hover:bg-green-500 text-white rounded-full px-7 py-2 transition-colors">
+          종목 추가
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+  // ──────────────────────────────────────────────────
+  // ⚙️  Supabase 설정  (supabase-setup.sql 먼저 실행)
+  // ──────────────────────────────────────────────────
+  const CFG = {
+    supabaseUrl: 'https://qpnqvflbenljasikmycj.supabase.co',
+    supabaseKey: 'sb_publishable_lWP7Lb9gFZx50fxw2J5vpg_qhs6VBNu',
+  };
+
+  // ──────────────────────────────────────────────────
+  // 지수 정의
+  // ──────────────────────────────────────────────────
+  const US_IDX = [
+    { symbol: '^GSPC', name: 'S&P500'   },
+    { symbol: '^NDX',  name: '나스닥100' },
+    { symbol: '^DJI',  name: '다우지수'  },
+  ];
+  const KR_IDX = [
+    { symbol: '^KS11', name: 'KOSPI'    },
+    { symbol: '^KQ11', name: 'KOSDAQ'   },
+    { symbol: 'GC=F',  name: 'KRX금현물' }, // 국제 금선물 기준
+  ];
+
+  // ──────────────────────────────────────────────────
+  // 상태
+  // ──────────────────────────────────────────────────
+  let db         = null;
+  let watchlist  = [];
+  let selected   = {};   // { symbol: name }
+  let searchTimer = null;
+  let refreshing  = false;
+
+  // ──────────────────────────────────────────────────
+  // 초기화
+  // ──────────────────────────────────────────────────
+  (async () => {
+    initDB();
+    await loadWatchlist();
+    await renderAllGrids();
+    setInterval(autoRefresh, 30_000);
+  })();
+
+  function initDB() {
+    if (CFG.supabaseUrl === 'YOUR_SUPABASE_URL') return;
+    try { db = supabase.createClient(CFG.supabaseUrl, CFG.supabaseKey); }
+    catch (e) { console.warn('Supabase 초기화 실패:', e); }
+  }
+
+  // ──────────────────────────────────────────────────
+  // 데이터 레이어 (Supabase ↔ localStorage 폴백)
+  // ──────────────────────────────────────────────────
+  async function loadWatchlist() {
+    if (db) {
+      try {
+        const { data, error } = await db.from('watchlist').select('*').order('created_at');
+        if (!error && data) { watchlist = data; persist(); return; }
+      } catch (e) { console.warn('Supabase 읽기 실패, localStorage 사용:', e); }
+    }
+    watchlist = JSON.parse(localStorage.getItem('wl') || '[]');
+  }
+
+  async function addItem(symbol, name) {
+    if (watchlist.some(w => w.symbol === symbol)) return;
+    if (db) {
+      try {
+        const { data, error } = await db.from('watchlist').insert([{ symbol, name }]).select();
+        if (!error && data?.[0]) { watchlist.push(data[0]); persist(); return; }
+      } catch (e) { console.warn('Supabase 추가 실패:', e); }
+    }
+    watchlist.push({ id: String(Date.now()), symbol, name, created_at: new Date().toISOString() });
+    persist();
+  }
+
+  async function removeItem(id) {
+    if (db) {
+      try { await db.from('watchlist').delete().eq('id', id); } catch (e) {}
+    }
+    watchlist = watchlist.filter(w => w.id !== id);
+    persist();
+  }
+
+  function persist() { localStorage.setItem('wl', JSON.stringify(watchlist)); }
+
+  // ──────────────────────────────────────────────────
+  // 가격 API (Yahoo Finance)
+  // ──────────────────────────────────────────────────
+  async function fetchPrice(symbol) {
+    try {
+      const r = await fetch(
+        `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1m&range=1d`
+      );
+      if (!r.ok) return null;
+      const j  = await r.json();
+      const m  = j?.chart?.result?.[0]?.meta;
+      if (!m) return null;
+      const price = m.regularMarketPrice;
+      const prev  = m.chartPreviousClose ?? m.previousClose;
+      if (!price || !prev) return null;
+      return {
+        price,
+        change : price - prev,
+        pct    : ((price - prev) / prev) * 100,
+        currency: m.currency || 'USD',
+      };
+    } catch { return null; }
+  }
+
+  // ──────────────────────────────────────────────────
+  // 렌더링
+  // ──────────────────────────────────────────────────
+  function skeletons(n) {
+    return Array(n).fill(
+      '<div class="bg-gray-800/50 rounded-xl h-[76px] pulse"></div>'
+    ).join('');
+  }
+
+  function priceCard(name, data) {
+    if (!data) return `
+      <div class="bg-gray-800 rounded-xl p-3 text-center fade-in">
+        <p class="text-xs text-gray-400 font-medium truncate">${h(name)}</p>
+        <p class="text-xs text-gray-600 mt-3">N/A</p>
+      </div>`;
+
+    const up   = data.pct >= 0;
+    const clr  = up ? 'text-red-400' : 'text-blue-400';
+    const arr  = up ? '▲' : '▼';
+    const pStr = data.currency === 'KRW'
+      ? Math.round(data.price).toLocaleString('ko-KR')
+      : data.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    return `
+      <div class="bg-gray-800 rounded-xl p-3 text-center hover:bg-gray-700 transition-colors fade-in">
+        <p class="text-xs text-gray-400 font-medium truncate">${h(name)}</p>
+        <p class="text-sm font-semibold mt-1">${pStr}</p>
+        <p class="${clr} text-xs mt-0.5 font-medium">${arr} ${Math.abs(data.pct).toFixed(2)}%</p>
+      </div>`;
+  }
+
+  async function renderGrid(indices, gridId) {
+    const el = document.getElementById(gridId);
+    el.innerHTML = skeletons(indices.length);
+    const res = await Promise.allSettled(indices.map(i => fetchPrice(i.symbol)));
+    el.innerHTML = indices.map((idx, i) =>
+      priceCard(idx.name, res[i].status === 'fulfilled' ? res[i].value : null)
+    ).join('');
+  }
+
+  async function renderWatchlistGrid() {
+    const el = document.getElementById('wl-grid');
+    if (!watchlist.length) {
+      el.innerHTML = `
+        <div class="col-span-3 text-center text-gray-600 py-8 text-xs">
+          아래 버튼을 눌러 관심종목을 추가하세요
+        </div>`;
+      return;
+    }
+    el.innerHTML = skeletons(watchlist.length);
+    const res = await Promise.allSettled(watchlist.map(w => fetchPrice(w.symbol)));
+    el.innerHTML = watchlist.map((w, i) =>
+      priceCard(w.name, res[i].status === 'fulfilled' ? res[i].value : null)
+    ).join('');
+  }
+
+  async function renderAllGrids() {
+    await Promise.all([
+      renderGrid(US_IDX, 'us-grid'),
+      renderGrid(KR_IDX, 'kr-grid'),
+      renderWatchlistGrid(),
+    ]);
+    const d = new Date();
+    document.getElementById('update-time').textContent =
+      `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')} 업데이트`;
+  }
+
+  async function renderManageList() {
+    const el = document.getElementById('manage-list');
+    if (!watchlist.length) {
+      el.innerHTML = `<p class="text-center text-gray-500 py-8 text-sm">관심종목이 없습니다.</p>`;
+      return;
+    }
+
+    el.innerHTML = watchlist.map(w => `
+      <div class="flex items-center gap-3 bg-gray-800 rounded-xl px-4 py-3 fade-in">
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-medium truncate">${h(w.name)}</p>
+          <p class="text-xs text-gray-500">${h(w.symbol)}</p>
+        </div>
+        <div id="mp-${w.id}" class="text-right min-w-[80px]">
+          <p class="text-xs text-gray-600 pulse">로딩중...</p>
+        </div>
+        <button data-id="${h(w.id)}" onclick="handleDelete(this)"
+                class="text-xs text-red-400 hover:text-white bg-red-900/30 hover:bg-red-700
+                       px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap shrink-0">
+          삭제
+        </button>
+      </div>
+    `).join('');
+
+    // 가격 비동기 로딩
+    watchlist.forEach(async w => {
+      const data = await fetchPrice(w.symbol);
+      const el2  = document.getElementById(`mp-${w.id}`);
+      if (!el2) return;
+      if (!data) { el2.innerHTML = '<p class="text-xs text-gray-600">N/A</p>'; return; }
+      const up   = data.pct >= 0;
+      const clr  = up ? 'text-red-400' : 'text-blue-400';
+      const pStr = data.currency === 'KRW'
+        ? Math.round(data.price).toLocaleString('ko-KR')
+        : data.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      el2.innerHTML = `
+        <p class="text-sm font-semibold">${pStr}</p>
+        <p class="${clr} text-xs">${up?'▲':'▼'} ${Math.abs(data.pct).toFixed(2)}%</p>`;
+    });
+  }
+
+  // ──────────────────────────────────────────────────
+  // 화면 전환
+  // ──────────────────────────────────────────────────
+  const VIEWS = ['v-main', 'v-manage', 'v-add'];
+
+  async function nav(to) {
+    VIEWS.forEach(id => document.getElementById(id).classList.add('hidden'));
+    document.getElementById(to).classList.remove('hidden');
+    if (to === 'v-main')   await renderAllGrids();
+    if (to === 'v-manage') await renderManageList();
+    if (to === 'v-add')    resetAddView();
+  }
+
+  function resetAddView() {
+    document.getElementById('search-input').value = '';
+    document.getElementById('search-results').innerHTML =
+      `<p class="text-center text-gray-500 py-10 text-sm">종목명이나 코드를 입력하여 검색하세요</p>`;
+    selected = {};
+  }
+
+  // ──────────────────────────────────────────────────
+  // 종목 검색
+  // ──────────────────────────────────────────────────
+  function debouncedSearch(q) {
+    clearTimeout(searchTimer);
+    if (!q.trim()) { resetAddView(); return; }
+    searchTimer = setTimeout(() => performSearch(q), 400);
+  }
+
+  function doSearch() { performSearch(document.getElementById('search-input').value); }
+
+  async function performSearch(q) {
+    if (!q.trim()) return;
+    const el = document.getElementById('search-results');
+    el.innerHTML = `<p class="text-center text-gray-500 py-10 text-sm">검색 중...</p>`;
+    try {
+      const r = await fetch(
+        `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=15&newsCount=0&listsCount=0`
+      );
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const j = await r.json();
+      const quotes = (j.quotes || []).filter(q =>
+        ['EQUITY', 'ETF', 'INDEX', 'MUTUALFUND'].includes(q.quoteType) && q.symbol
+      );
+
+      if (!quotes.length) {
+        el.innerHTML = `<p class="text-center text-gray-500 py-10 text-sm">검색 결과가 없습니다.</p>`;
+        return;
+      }
+
+      el.innerHTML = quotes.map(q => {
+        const name  = q.shortname || q.longname || q.symbol;
+        const exch  = q.exchDisp || q.exchange || '';
+        const rowId = `sr-${q.symbol.replace(/\W/g, '_')}`;
+        const chk   = selected[q.symbol] ? 'checked' : '';
+        const bdr   = selected[q.symbol] ? 'border-blue-600' : 'border-gray-800';
+        const sym   = q.symbol.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        const nm    = name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        return `
+          <label id="${rowId}"
+                 class="flex items-center gap-3 bg-gray-800 rounded-xl px-4 py-3 border ${bdr}
+                        cursor-pointer hover:border-gray-600 transition-colors fade-in">
+            <input type="checkbox" ${chk} class="w-4 h-4 accent-blue-500 shrink-0"
+                   onchange="toggleSelected('${sym}','${nm}',this)">
+            <div class="flex-1 min-w-0">
+              <p class="text-sm font-medium truncate">${h(name)}</p>
+              <p class="text-xs text-gray-500">${h(q.symbol)} · ${h(exch)}</p>
+            </div>
+          </label>`;
+      }).join('');
+
+    } catch (e) {
+      console.error('검색 오류:', e);
+      el.innerHTML = `<p class="text-center text-red-400 py-10 text-sm">검색 중 오류가 발생했습니다.<br><span class="text-gray-500 text-xs">네트워크 상태를 확인해주세요</span></p>`;
+    }
+  }
+
+  function toggleSelected(symbol, name, cb) {
+    const rowId = `sr-${symbol.replace(/\W/g, '_')}`;
+    const row   = document.getElementById(rowId);
+    if (cb.checked) {
+      selected[symbol] = name;
+      row?.classList.remove('border-gray-800');
+      row?.classList.add('border-blue-600');
+    } else {
+      delete selected[symbol];
+      row?.classList.remove('border-blue-600');
+      row?.classList.add('border-gray-800');
+    }
+  }
+
+  async function confirmAdd() {
+    const syms = Object.keys(selected);
+    if (!syms.length) { alert('추가할 종목을 선택하세요.'); return; }
+    for (const sym of syms) await addItem(sym, selected[sym]);
+    await nav('v-manage');
+  }
+
+  // ──────────────────────────────────────────────────
+  // 삭제
+  // ──────────────────────────────────────────────────
+  async function handleDelete(btn) {
+    await removeItem(btn.dataset.id);
+    await renderManageList();
+  }
+
+  // ──────────────────────────────────────────────────
+  // 새로고침
+  // ──────────────────────────────────────────────────
+  async function handleRefresh() {
+    if (refreshing) return;
+    refreshing = true;
+    const btn = document.querySelector('[onclick="handleRefresh()"]');
+    if (btn) btn.style.opacity = '0.4';
+    await renderAllGrids();
+    if (btn) btn.style.opacity = '';
+    refreshing = false;
+  }
+
+  async function autoRefresh() {
+    const main = document.getElementById('v-main');
+    if (!main.classList.contains('hidden')) await renderAllGrids();
+  }
+
+  // ──────────────────────────────────────────────────
+  // XSS 방어용 HTML 이스케이프
+  // ──────────────────────────────────────────────────
+  function h(s) {
+    return String(s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  </script>
+</body>
+</html>
