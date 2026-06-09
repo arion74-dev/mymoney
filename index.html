@@ -11,9 +11,16 @@
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.25} }
     .fade-in { animation: fadeIn .25s ease; }
     @keyframes fadeIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+    .ws-dot { width:6px; height:6px; border-radius:50%; display:inline-block; }
   </style>
 </head>
 <body class="bg-gray-950 text-white min-h-screen">
+
+  <!-- KIS 미설정 안내 배너 -->
+  <div id="kis-banner" class="hidden bg-amber-900/40 border-b border-amber-700/40 px-4 py-2 text-center">
+    <span class="text-xs text-amber-400">KIS API 설정이 필요합니다 — </span>
+    <button onclick="nav('v-settings')" class="text-xs text-blue-400 underline hover:text-blue-300">⚙ 설정하기</button>
+  </div>
 
   <!-- ═══════════════════════════════════════════
        메인 화면
@@ -24,10 +31,13 @@
       <!-- 헤더 -->
       <div class="flex items-center justify-between mb-6">
         <h1 class="text-xl font-bold tracking-tight">📈 주가 지수 정보</h1>
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-3">
+          <span id="ws-status" title="WebSocket 연결 상태" class="ws-dot bg-gray-600"></span>
           <span id="update-time" class="text-xs text-gray-500"></span>
           <button onclick="handleRefresh()" title="새로고침"
                   class="text-gray-500 hover:text-white text-base transition-colors">↻</button>
+          <button onclick="nav('v-settings')" title="KIS 설정"
+                  class="text-gray-500 hover:text-white text-sm transition-colors">⚙</button>
         </div>
       </div>
 
@@ -70,21 +80,17 @@
   ════════════════════════════════════════════ -->
   <div id="v-manage" class="hidden fixed inset-0 bg-gray-950 overflow-y-auto z-10">
     <div class="max-w-md mx-auto px-4 py-6">
-
       <div class="flex items-center mb-6">
         <button onclick="nav('v-main')" class="text-gray-400 hover:text-white mr-3 text-lg">‹</button>
         <h2 class="text-lg font-bold flex-1">관심종목 관리</h2>
       </div>
-
       <div id="manage-list" class="space-y-2"></div>
-
       <div class="mt-6 text-center">
         <button onclick="nav('v-add')"
                 class="text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-full px-7 py-2 transition-colors">
           관심종목 추가
         </button>
       </div>
-
     </div>
   </div>
 
@@ -93,13 +99,17 @@
   ════════════════════════════════════════════ -->
   <div id="v-add" class="hidden fixed inset-0 bg-gray-950 overflow-y-auto z-20">
     <div class="max-w-md mx-auto px-4 py-6">
-
       <div class="flex items-center mb-6">
         <button onclick="nav('v-manage')" class="text-gray-400 hover:text-white mr-3 text-lg">‹</button>
         <h2 class="text-lg font-bold flex-1">관심종목 추가</h2>
       </div>
-
-      <!-- 검색창 -->
+      <!-- 탭: 국내 / 해외 -->
+      <div class="flex gap-2 mb-4">
+        <button id="tab-kor" onclick="switchTab('kor')"
+                class="flex-1 text-sm py-2 rounded-xl bg-blue-600 text-white transition-colors">국내</button>
+        <button id="tab-us" onclick="switchTab('us')"
+                class="flex-1 text-sm py-2 rounded-xl bg-gray-800 text-gray-400 transition-colors">해외</button>
+      </div>
       <div class="flex gap-2 mb-4">
         <input id="search-input" type="text"
                placeholder="종목명 또는 종목코드 입력"
@@ -112,201 +122,513 @@
           🔍
         </button>
       </div>
-
       <div id="search-results" class="space-y-2"></div>
-
       <div class="mt-6 text-center">
         <button onclick="confirmAdd()"
                 class="text-sm bg-green-600 hover:bg-green-500 text-white rounded-full px-7 py-2 transition-colors">
           종목 추가
         </button>
       </div>
+    </div>
+  </div>
 
+  <!-- ═══════════════════════════════════════════
+       KIS 설정 화면
+  ════════════════════════════════════════════ -->
+  <div id="v-settings" class="hidden fixed inset-0 bg-gray-950 overflow-y-auto z-30">
+    <div class="max-w-md mx-auto px-4 py-6">
+      <div class="flex items-center mb-6">
+        <button onclick="nav('v-main')" class="text-gray-400 hover:text-white mr-3 text-lg">‹</button>
+        <h2 class="text-lg font-bold flex-1">KIS API 설정</h2>
+      </div>
+
+      <div class="space-y-4">
+        <!-- 계좌 유형 -->
+        <div>
+          <p class="text-sm text-gray-400 mb-2">계좌 유형</p>
+          <div class="flex gap-2">
+            <button id="btn-real" onclick="setAccountType(true)"
+                    class="flex-1 text-sm py-2 rounded-xl transition-colors">실전</button>
+            <button id="btn-mock" onclick="setAccountType(false)"
+                    class="flex-1 text-sm py-2 rounded-xl transition-colors">모의</button>
+          </div>
+        </div>
+        <!-- App Key -->
+        <div>
+          <label class="text-sm text-gray-400 block mb-1">App Key</label>
+          <input id="cfg-key" type="text" placeholder="PSxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                 class="w-full bg-gray-800 border border-gray-700 focus:border-blue-500 outline-none
+                        rounded-xl px-4 py-2.5 text-sm font-mono transition-colors">
+        </div>
+        <!-- App Secret -->
+        <div>
+          <label class="text-sm text-gray-400 block mb-1">App Secret</label>
+          <input id="cfg-secret" type="password" placeholder="App Secret 입력"
+                 class="w-full bg-gray-800 border border-gray-700 focus:border-blue-500 outline-none
+                        rounded-xl px-4 py-2.5 text-sm transition-colors">
+          <button onclick="toggleSecretVisibility()" class="text-xs text-gray-500 mt-1 hover:text-gray-300">
+            👁 표시/숨김
+          </button>
+        </div>
+      </div>
+
+      <div class="mt-6 text-center">
+        <button onclick="saveSettings()"
+                class="bg-blue-600 hover:bg-blue-500 text-white rounded-full px-8 py-2 text-sm transition-colors">
+          저장 및 연결
+        </button>
+      </div>
+
+      <!-- 안내 -->
+      <div class="mt-6 p-4 bg-amber-900/20 border border-amber-700/30 rounded-xl space-y-1">
+        <p class="text-xs text-amber-400 font-semibold">⚠️ 보안 주의</p>
+        <p class="text-xs text-gray-400">App Key와 Secret은 브라우저 localStorage에 저장됩니다. 공용 PC에서는 사용 후 삭제하세요.</p>
+      </div>
+      <div class="mt-3 p-4 bg-gray-800/60 border border-gray-700/40 rounded-xl space-y-1">
+        <p class="text-xs text-gray-300 font-semibold">발급 방법</p>
+        <p class="text-xs text-gray-400">KIS Developers → 앱 Key 발급/관리 → 앱 등록 후 발급</p>
+        <p class="text-xs text-gray-500">모의투자는 별도 앱 등록 필요</p>
+      </div>
+      <!-- 초기화 버튼 -->
+      <div class="mt-4 text-center">
+        <button onclick="clearSettings()"
+                class="text-xs text-gray-600 hover:text-red-400 transition-colors">
+          설정 초기화
+        </button>
+      </div>
     </div>
   </div>
 
   <script>
-  // ──────────────────────────────────────────────────
-  // ⚙️  Supabase 설정  (supabase-setup.sql 먼저 실행)
-  // ──────────────────────────────────────────────────
+  // ════════════════════════════════════════════════════════
+  // ⚙️  Supabase 설정
+  // ════════════════════════════════════════════════════════
   const CFG = {
     supabaseUrl: 'https://qpnqvflbenljasikmycj.supabase.co',
     supabaseKey: 'sb_publishable_lWP7Lb9gFZx50fxw2J5vpg_qhs6VBNu',
   };
 
-  // ──────────────────────────────────────────────────
-  // 지수 정의
-  // ──────────────────────────────────────────────────
+  // ════════════════════════════════════════════════════════
+  // ⚙️  KIS 설정 (localStorage 기반)
+  // ════════════════════════════════════════════════════════
+  const KIS = {
+    get key()    { return localStorage.getItem('kis_key')    || ''; },
+    get secret() { return localStorage.getItem('kis_secret') || ''; },
+    get isReal() { return localStorage.getItem('kis_real') !== 'false'; },
+    set key(v)    { localStorage.setItem('kis_key', v); },
+    set secret(v) { localStorage.setItem('kis_secret', v); },
+    set isReal(v) { localStorage.setItem('kis_real', String(v)); },
+    get ok()     { return !!(this.key && this.secret); },
+    get restBase() {
+      return this.isReal
+        ? 'https://openapi.koreainvestment.com:9443'
+        : 'https://openapivts.koreainvestment.com:9443';
+    },
+    get wsUrl() {
+      return this.isReal
+        ? 'wss://ops.koreainvestment.com:21000'
+        : 'wss://ops.koreainvestment.com:31000';
+    },
+  };
+
+  // ════════════════════════════════════════════════════════
+  // 지수 정의 (KIS 방식)
+  // type: 'kor-index' | 'kor-stock' | 'us'
+  // wsTrId: WebSocket 실시간 TR_ID (국내만)
+  // ════════════════════════════════════════════════════════
   const US_IDX = [
-    { symbol: '^GSPC', name: 'S&P500'   },
-    { symbol: '^NDX',  name: '나스닥100' },
-    { symbol: '^DJI',  name: '다우지수'  },
+    { id: 'SPY', name: 'S&P500',   excd: 'NYS', type: 'us' },
+    { id: 'QQQ', name: '나스닥100', excd: 'NAS', type: 'us' },
+    { id: 'DIA', name: '다우존스',  excd: 'NYS', type: 'us' },
   ];
   const KR_IDX = [
-    { symbol: '^KS11', name: 'KOSPI'    },
-    { symbol: '^KQ11', name: 'KOSDAQ'   },
-    { symbol: 'GC=F',  name: 'KRX금현물' }, // 국제 금선물 기준
+    { id: '0001',   name: 'KOSPI',    type: 'kor-index', wsTrId: 'H0UPCNT0' },
+    { id: '1001',   name: 'KOSDAQ',   type: 'kor-index', wsTrId: 'H0UPCNT0' },
+    { id: '138230', name: 'KRX금현물', type: 'kor-stock', wsTrId: 'H0STCNT0' },
   ];
 
-  // ──────────────────────────────────────────────────
-  // 상태
-  // ──────────────────────────────────────────────────
-  let db         = null;
-  let watchlist  = [];
-  let selected   = {};   // { symbol: name }
+  // ════════════════════════════════════════════════════════
+  // 앱 상태
+  // ════════════════════════════════════════════════════════
+  let db          = null;
+  let watchlist   = [];
+  let selected    = {};       // { symbol: { name, market, type } }
   let searchTimer = null;
   let refreshing  = false;
+  let searchTab   = 'kor';   // 'kor' | 'us'
 
-  // ──────────────────────────────────────────────────
+  // ════════════════════════════════════════════════════════
   // 초기화
-  // ──────────────────────────────────────────────────
+  // ════════════════════════════════════════════════════════
   (async () => {
-    initDB();
+    initSupabase();
     await loadWatchlist();
+    showBannerIfNeeded();
+    if (KIS.ok) {
+      await kisInitAuth();
+      kisConnectWS();
+    }
     await renderAllGrids();
-    setInterval(autoRefresh, 30_000);
+    // 미국 주식: 60초 폴링 (WebSocket 미지원)
+    setInterval(pollUsIndices, 60_000);
   })();
 
-  function initDB() {
+  function showBannerIfNeeded() {
+    document.getElementById('kis-banner').classList.toggle('hidden', KIS.ok);
+  }
+
+  // ════════════════════════════════════════════════════════
+  // Supabase
+  // ════════════════════════════════════════════════════════
+  function initSupabase() {
     if (CFG.supabaseUrl === 'YOUR_SUPABASE_URL') return;
     try { db = supabase.createClient(CFG.supabaseUrl, CFG.supabaseKey); }
     catch (e) { console.warn('Supabase 초기화 실패:', e); }
   }
 
-  // ──────────────────────────────────────────────────
-  // 데이터 레이어 (Supabase ↔ localStorage 폴백)
-  // ──────────────────────────────────────────────────
   async function loadWatchlist() {
     if (db) {
       try {
         const { data, error } = await db.from('watchlist').select('*').order('created_at');
-        if (!error && data) { watchlist = data; persist(); return; }
-      } catch (e) { console.warn('Supabase 읽기 실패, localStorage 사용:', e); }
+        if (!error && data) { watchlist = data.map(inferType); persist(); return; }
+      } catch (e) { console.warn('Supabase 읽기 실패 → localStorage:', e); }
     }
-    watchlist = JSON.parse(localStorage.getItem('wl') || '[]');
+    watchlist = JSON.parse(localStorage.getItem('wl') || '[]').map(inferType);
   }
 
-  async function addItem(symbol, name) {
+  // 기존 데이터 호환: type/market 없으면 심볼로 유추
+  function inferType(item) {
+    if (item.type) return item;
+    if (/^\d{4}$/.test(item.symbol)) return { ...item, type: 'kor-index', market: 'KOR', wsTrId: 'H0UPCNT0' };
+    if (/^\d{6}$/.test(item.symbol)) return { ...item, type: 'kor-stock', market: 'KOR', wsTrId: 'H0STCNT0' };
+    return { ...item, type: 'us', market: item.market || 'NAS' };
+  }
+
+  async function addItem(symbol, name, market = 'KOR', type = 'kor-stock') {
     if (watchlist.some(w => w.symbol === symbol)) return;
+    const wsTrId = type === 'kor-index' ? 'H0UPCNT0' : type === 'kor-stock' ? 'H0STCNT0' : null;
+    const newItem = { symbol, name, market, type, ...(wsTrId ? { wsTrId } : {}) };
     if (db) {
       try {
-        const { data, error } = await db.from('watchlist').insert([{ symbol, name }]).select();
-        if (!error && data?.[0]) { watchlist.push(data[0]); persist(); return; }
+        const { data, error } = await db.from('watchlist').insert([{ symbol, name, market, type }]).select();
+        if (!error && data?.[0]) { watchlist.push({ ...data[0], wsTrId }); persist(); return; }
       } catch (e) { console.warn('Supabase 추가 실패:', e); }
     }
-    watchlist.push({ id: String(Date.now()), symbol, name, created_at: new Date().toISOString() });
+    watchlist.push({ id: String(Date.now()), ...newItem, created_at: new Date().toISOString() });
     persist();
   }
 
   async function removeItem(id) {
-    if (db) {
-      try { await db.from('watchlist').delete().eq('id', id); } catch (e) {}
-    }
+    if (db) { try { await db.from('watchlist').delete().eq('id', id); } catch (e) {} }
     watchlist = watchlist.filter(w => w.id !== id);
     persist();
   }
 
   function persist() { localStorage.setItem('wl', JSON.stringify(watchlist)); }
 
-  // ──────────────────────────────────────────────────
-  // 가격 API (Yahoo Finance v7 quote + CORS 프록시 폴백)
-  // ──────────────────────────────────────────────────
+  // ════════════════════════════════════════════════════════
+  // KIS 인증
+  // ════════════════════════════════════════════════════════
+  let _token = null, _tokenExp = 0;
+  let _approvalKey = null;
 
-  // 직접 호출 실패 시 corsproxy.io 경유
-  async function yFetch(url) {
-    try {
-      const r = await fetch(url);
-      if (r.ok) return r.json();
-    } catch {}
-    try {
-      const r = await fetch(`https://corsproxy.io/?${encodeURIComponent(url)}`);
-      if (r.ok) return r.json();
-    } catch {}
+  async function kisGetToken() {
+    if (_token && Date.now() < _tokenExp) return _token;
+    const url  = KIS.restBase + '/oauth2/tokenP';
+    const body = JSON.stringify({ grant_type: 'client_credentials', appkey: KIS.key, appsecret: KIS.secret });
+    const opts = { method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' }, body };
+    for (const u of [url, `https://corsproxy.io/?${encodeURIComponent(url)}`]) {
+      try {
+        const r = await fetch(u, opts);
+        const j = await r.json();
+        if (j.access_token) {
+          _token    = j.access_token;
+          _tokenExp = Date.now() + (j.expires_in - 60) * 1000;
+          return _token;
+        }
+      } catch {}
+    }
+    console.error('KIS 토큰 발급 실패');
     return null;
   }
 
-  // 여러 심볼을 한 번에 조회 (배치) → { symbol: priceData }
-  async function fetchPriceBatch(symbols) {
-    if (!symbols.length) return {};
-    const url = `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${
-      symbols.map(encodeURIComponent).join(',')
-    }&fields=regularMarketPrice,regularMarketPreviousClose,currency`;
-    const j = await yFetch(url);
-    const map = {};
-    for (const q of j?.quoteResponse?.result ?? []) {
-      const price = q.regularMarketPrice;
-      const prev  = q.regularMarketPreviousClose;
-      if (!price || !prev) continue;
-      map[q.symbol] = {
-        price,
-        change  : price - prev,
-        pct     : ((price - prev) / prev) * 100,
-        currency: q.currency || 'USD',
-      };
+  async function kisGetApprovalKey() {
+    if (_approvalKey) return _approvalKey;
+    const url  = KIS.restBase + '/oauth2/Approval';
+    const body = JSON.stringify({ grant_type: 'client_credentials', appkey: KIS.key, secretkey: KIS.secret });
+    const opts = { method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' }, body };
+    for (const u of [url, `https://corsproxy.io/?${encodeURIComponent(url)}`]) {
+      try {
+        const r = await fetch(u, opts);
+        const j = await r.json();
+        if (j.approval_key) { _approvalKey = j.approval_key; return _approvalKey; }
+      } catch {}
     }
-    return map;
+    return null;
   }
 
-  // 단일 심볼 조회 (관심종목 관리 화면에서 사용)
-  async function fetchPrice(symbol) {
-    const m = await fetchPriceBatch([symbol]);
-    return m[symbol] ?? null;
+  async function kisInitAuth() {
+    await kisGetToken();
   }
 
-  // ──────────────────────────────────────────────────
-  // 렌더링
-  // ──────────────────────────────────────────────────
+  // ════════════════════════════════════════════════════════
+  // KIS REST API
+  // ════════════════════════════════════════════════════════
+  async function kisGet(path, trId, params = {}) {
+    const token = await kisGetToken();
+    if (!token) return null;
+    const qs  = new URLSearchParams(params).toString();
+    const url = `${KIS.restBase}${path}${qs ? '?' + qs : ''}`;
+    const headers = {
+      'Content-Type': 'application/json; charset=utf-8',
+      'authorization': `Bearer ${token}`,
+      'appkey'   : KIS.key,
+      'appsecret': KIS.secret,
+      'tr_id'    : trId,
+      'custtype' : 'P',
+    };
+    for (const u of [url, `https://corsproxy.io/?${encodeURIComponent(url)}`]) {
+      try {
+        const r = await fetch(u, { headers });
+        if (!r.ok) continue;
+        const j = await r.json();
+        if (j.rt_cd === '0') return j;
+      } catch {}
+    }
+    return null;
+  }
+
+  // 국내 지수 현재가 (KOSPI: 0001, KOSDAQ: 1001)
+  async function fetchKorIndex(code) {
+    const j = await kisGet(
+      '/uapi/domestic-stock/v1/quotations/inquire-index-price',
+      'FHPUP02100000',
+      { FID_COND_MRKT_DIV_CODE: 'U', FID_INPUT_ISCD: code }
+    );
+    const o = j?.output;
+    if (!o) return null;
+    const price  = parseFloat(o.bstp_nmix_prpr);
+    const change = parseFloat(o.bstp_nmix_prdy_vrss);
+    const pct    = parseFloat(o.bstp_nmix_prdy_ctrt);
+    return price ? { price, change, pct, currency: 'KRW' } : null;
+  }
+
+  // 국내 주식 현재가
+  async function fetchKorStock(code) {
+    const j = await kisGet(
+      '/uapi/domestic-stock/v1/quotations/inquire-price',
+      'FHKST01010100',
+      { FID_COND_MRKT_DIV_CODE: 'J', FID_INPUT_ISCD: code }
+    );
+    const o = j?.output;
+    if (!o) return null;
+    const price  = parseFloat(o.stck_prpr);
+    const sign   = o.prdy_vrss_sign;  // 2=상승 5=하락 3=보합
+    const change = parseFloat(o.prdy_vrss) * (sign === '5' || sign === '4' ? -1 : 1);
+    const pct    = parseFloat(o.prdy_ctrt)  * (sign === '5' || sign === '4' ? -1 : 1);
+    return price ? { price, change, pct, currency: 'KRW' } : null;
+  }
+
+  // 해외 주식 현재가 (excd: NAS/NYS)
+  async function fetchUsStock(symbol, excd = 'NAS') {
+    const j = await kisGet(
+      '/uapi/overseas-price/v1/quotations/price',
+      'HHDFS76200200',
+      { AUTH: '', EXCD: excd, SYMB: symbol }
+    );
+    const o = j?.output;
+    if (!o) return null;
+    const price  = parseFloat(o.last);
+    const base   = parseFloat(o.base);
+    if (!price || !base) return null;
+    const sign   = o.sign;  // 2=상승 5=하락
+    const diff   = Math.abs(parseFloat(o.diff));
+    const rate   = Math.abs(parseFloat(o.rate));
+    const neg    = sign === '5' || sign === '4';
+    return { price, change: neg ? -diff : diff, pct: neg ? -rate : rate, currency: 'USD' };
+  }
+
+  // 종목 타입에 맞는 가격 조회
+  async function fetchByItem(item) {
+    if (!KIS.ok) return null;
+    if (item.type === 'kor-index') return fetchKorIndex(item.id || item.symbol);
+    if (item.type === 'kor-stock') return fetchKorStock(item.id || item.symbol);
+    if (item.type === 'us')        return fetchUsStock(item.id || item.symbol, item.excd || item.market || 'NAS');
+    return null;
+  }
+
+  // ════════════════════════════════════════════════════════
+  // KIS WebSocket (국내 실시간)
+  // ════════════════════════════════════════════════════════
+  let _ws = null;
+  let _wsSubs = new Map();   // 'trId:trKey' → callback
+  let _wsReconnect = null;
+
+  async function kisConnectWS() {
+    if (_ws?.readyState === WebSocket.OPEN) return;
+    const ak = await kisGetApprovalKey();
+    if (!ak) return;
+
+    _ws = new WebSocket(KIS.wsUrl);
+    setWsDot('connecting');
+
+    _ws.onopen = () => {
+      setWsDot('open');
+      for (const [key] of _wsSubs) {
+        const [trId, trKey] = key.split(':');
+        wsSend(ak, trId, trKey, true);
+      }
+    };
+
+    _ws.onmessage = (e) => onWsMsg(e.data);
+    _ws.onerror   = () => setWsDot('error');
+
+    _ws.onclose = () => {
+      setWsDot('closed');
+      _ws = null;
+      _approvalKey = null;
+      clearTimeout(_wsReconnect);
+      _wsReconnect = setTimeout(kisConnectWS, 30_000);
+    };
+  }
+
+  function wsSend(ak, trId, trKey, subscribe) {
+    if (_ws?.readyState !== WebSocket.OPEN) return;
+    _ws.send(JSON.stringify({
+      header: { approval_key: ak, custtype: 'P', tr_type: subscribe ? '1' : '2', 'content-type': 'utf-8' },
+      body:   { input: { tr_id: trId, tr_key: trKey } },
+    }));
+  }
+
+  async function wsSubscribe(trId, trKey, callback) {
+    const key = `${trId}:${trKey}`;
+    _wsSubs.set(key, callback);
+    if (_ws?.readyState === WebSocket.OPEN) {
+      const ak = await kisGetApprovalKey();
+      if (ak) wsSend(ak, trId, trKey, true);
+    } else {
+      kisConnectWS();
+    }
+  }
+
+  function onWsMsg(raw) {
+    if (raw === 'PINGPONG') { _ws?.send('PINGPONG'); return; }
+    if (raw.startsWith('{')) return;  // JSON 제어 메시지 무시
+
+    const parts = raw.split('|');
+    if (parts.length < 4 || parts[0] !== '0') return;
+
+    const trId = parts[1];
+    const f    = parts[3].split('^');
+    let code, price, change, pct;
+
+    if (trId === 'H0STCNT0') {
+      // 국내주식 체결: [0]종목코드 [2]현재가 [3]부호 [4]전일대비 [5]대비율
+      code   = f[0];
+      price  = parseFloat(f[2]);
+      const neg = f[3] === '4' || f[3] === '5';
+      change = parseFloat(f[4]) * (neg ? -1 : 1);
+      pct    = parseFloat(f[5]) * (neg ? -1 : 1);
+    } else if (trId === 'H0UPCNT0') {
+      // 업종지수: [0]업종코드 [1]현재가 [2]전일대비 [3]부호 [4]대비율
+      code   = f[0];
+      price  = parseFloat(f[1]);
+      const neg = f[3] === '4' || f[3] === '5';
+      change = parseFloat(f[2]) * (neg ? -1 : 1);
+      pct    = parseFloat(f[4]) * (neg ? -1 : 1);
+    } else { return; }
+
+    if (!price) return;
+    const cb = _wsSubs.get(`${trId}:${code}`);
+    if (cb) cb({ price, change, pct, currency: 'KRW' });
+  }
+
+  function setWsDot(state) {
+    const dot = document.getElementById('ws-status');
+    if (!dot) return;
+    dot.className = 'ws-dot ' + {
+      open: 'bg-green-500', connecting: 'bg-yellow-500',
+      error: 'bg-red-500', closed: 'bg-gray-600',
+    }[state];
+    dot.title = { open: 'WebSocket 연결됨', connecting: '연결중…', error: '연결 오류', closed: '연결 끊김' }[state];
+  }
+
+  // ════════════════════════════════════════════════════════
+  // 렌더링 (WebSocket 실시간 업데이트 지원)
+  // ════════════════════════════════════════════════════════
   function skeletons(n) {
-    return Array(n).fill(
-      '<div class="bg-gray-800/50 rounded-xl h-[76px] pulse"></div>'
-    ).join('');
+    return Array(n).fill('<div class="bg-gray-800/50 rounded-xl h-[76px] pulse"></div>').join('');
   }
 
-  function priceCard(name, data) {
+  function safeId(str) { return String(str).replace(/\W/g, '_'); }
+
+  function priceCard(name, data, itemId = '') {
+    const sid = safeId(itemId);
     if (!data) return `
       <div class="bg-gray-800 rounded-xl p-3 text-center fade-in">
         <p class="text-xs text-gray-400 font-medium truncate">${h(name)}</p>
-        <p class="text-xs text-gray-600 mt-3">N/A</p>
+        <p class="text-xs text-gray-600 mt-3">${KIS.ok ? 'N/A' : '–'}</p>
       </div>`;
-
     const up   = data.pct >= 0;
     const clr  = up ? 'text-red-400' : 'text-blue-400';
     const arr  = up ? '▲' : '▼';
     const pStr = data.currency === 'KRW'
       ? Math.round(data.price).toLocaleString('ko-KR')
       : data.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
     return `
       <div class="bg-gray-800 rounded-xl p-3 text-center hover:bg-gray-700 transition-colors fade-in">
         <p class="text-xs text-gray-400 font-medium truncate">${h(name)}</p>
-        <p class="text-sm font-semibold mt-1">${pStr}</p>
-        <p class="${clr} text-xs mt-0.5 font-medium">${arr} ${Math.abs(data.pct).toFixed(2)}%</p>
+        <p class="text-sm font-semibold mt-1" id="p-${sid}">${pStr}</p>
+        <p class="${clr} text-xs mt-0.5 font-medium" id="c-${sid}">${arr} ${Math.abs(data.pct).toFixed(2)}%</p>
       </div>`;
   }
 
-  async function renderGrid(indices, gridId) {
+  // WebSocket 실시간 데이터로 카드 값만 업데이트 (리렌더 없음)
+  function updateCardLive(itemId, data) {
+    const sid = safeId(itemId);
+    const pEl = document.getElementById(`p-${sid}`);
+    const cEl = document.getElementById(`c-${sid}`);
+    if (!pEl || !cEl || !data) return;
+    const up   = data.pct >= 0;
+    pEl.textContent = data.currency === 'KRW'
+      ? Math.round(data.price).toLocaleString('ko-KR')
+      : data.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    cEl.textContent  = `${up ? '▲' : '▼'} ${Math.abs(data.pct).toFixed(2)}%`;
+    cEl.className    = `text-xs mt-0.5 font-medium ${up ? 'text-red-400' : 'text-blue-400'}`;
+  }
+
+  async function renderGrid(items, gridId) {
     const el = document.getElementById(gridId);
-    el.innerHTML = skeletons(indices.length);
-    const prices = await fetchPriceBatch(indices.map(i => i.symbol));
-    el.innerHTML = indices.map(idx =>
-      priceCard(idx.name, prices[idx.symbol] ?? null)
+    el.innerHTML = skeletons(items.length);
+    const results = await Promise.allSettled(items.map(i => fetchByItem(i)));
+    el.innerHTML = items.map((item, i) =>
+      priceCard(item.name, results[i].status === 'fulfilled' ? results[i].value : null, item.id)
     ).join('');
+    // 국내 항목 WebSocket 구독
+    if (KIS.ok) {
+      items.filter(i => i.wsTrId).forEach(item =>
+        wsSubscribe(item.wsTrId, item.id, d => updateCardLive(item.id, d))
+      );
+    }
   }
 
   async function renderWatchlistGrid() {
     const el = document.getElementById('wl-grid');
     if (!watchlist.length) {
-      el.innerHTML = `
-        <div class="col-span-3 text-center text-gray-600 py-8 text-xs">
-          아래 버튼을 눌러 관심종목을 추가하세요
-        </div>`;
+      el.innerHTML = `<div class="col-span-3 text-center text-gray-600 py-8 text-xs">아래 버튼을 눌러 관심종목을 추가하세요</div>`;
       return;
     }
     el.innerHTML = skeletons(watchlist.length);
-    const prices = await fetchPriceBatch(watchlist.map(w => w.symbol));
-    el.innerHTML = watchlist.map(w =>
-      priceCard(w.name, prices[w.symbol] ?? null)
+    const results = await Promise.allSettled(watchlist.map(w => fetchByItem(w)));
+    el.innerHTML = watchlist.map((w, i) =>
+      priceCard(w.name, results[i].status === 'fulfilled' ? results[i].value : null, w.symbol)
     ).join('');
+    // 국내 WebSocket 구독
+    if (KIS.ok) {
+      watchlist.filter(w => w.wsTrId).forEach(w =>
+        wsSubscribe(w.wsTrId, w.symbol, d => updateCardLive(w.symbol, d))
+      );
+    }
   }
 
   async function renderAllGrids() {
@@ -320,18 +642,33 @@
       `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')} 업데이트`;
   }
 
+  // 미국 지수 60초 폴링 (WebSocket 미지원)
+  async function pollUsIndices() {
+    const results = await Promise.allSettled(US_IDX.map(i => fetchByItem(i)));
+    US_IDX.forEach((idx, i) => {
+      const data = results[i].status === 'fulfilled' ? results[i].value : null;
+      if (data) updateCardLive(idx.id, data);
+    });
+    // 관심종목 US 종목도 폴링
+    const usWl = watchlist.filter(w => w.type === 'us');
+    const usResults = await Promise.allSettled(usWl.map(w => fetchByItem(w)));
+    usWl.forEach((w, i) => {
+      const data = usResults[i].status === 'fulfilled' ? usResults[i].value : null;
+      if (data) updateCardLive(w.symbol, data);
+    });
+  }
+
   async function renderManageList() {
     const el = document.getElementById('manage-list');
     if (!watchlist.length) {
       el.innerHTML = `<p class="text-center text-gray-500 py-8 text-sm">관심종목이 없습니다.</p>`;
       return;
     }
-
     el.innerHTML = watchlist.map(w => `
       <div class="flex items-center gap-3 bg-gray-800 rounded-xl px-4 py-3 fade-in">
         <div class="flex-1 min-w-0">
           <p class="text-sm font-medium truncate">${h(w.name)}</p>
-          <p class="text-xs text-gray-500">${h(w.symbol)}</p>
+          <p class="text-xs text-gray-500">${h(w.symbol)} · ${h(w.type === 'us' ? w.market || 'US' : '국내')}</p>
         </div>
         <div id="mp-${w.id}" class="text-right min-w-[80px]">
           <p class="text-xs text-gray-600 pulse">로딩중...</p>
@@ -344,46 +681,68 @@
       </div>
     `).join('');
 
-    // 가격 비동기 로딩
     watchlist.forEach(async w => {
-      const data = await fetchPrice(w.symbol);
+      const data = await fetchByItem(w);
       const el2  = document.getElementById(`mp-${w.id}`);
       if (!el2) return;
       if (!data) { el2.innerHTML = '<p class="text-xs text-gray-600">N/A</p>'; return; }
       const up   = data.pct >= 0;
-      const clr  = up ? 'text-red-400' : 'text-blue-400';
       const pStr = data.currency === 'KRW'
         ? Math.round(data.price).toLocaleString('ko-KR')
         : data.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       el2.innerHTML = `
         <p class="text-sm font-semibold">${pStr}</p>
-        <p class="${clr} text-xs">${up?'▲':'▼'} ${Math.abs(data.pct).toFixed(2)}%</p>`;
+        <p class="${up ? 'text-red-400' : 'text-blue-400'} text-xs">${up ? '▲' : '▼'} ${Math.abs(data.pct).toFixed(2)}%</p>`;
     });
   }
 
-  // ──────────────────────────────────────────────────
+  // ════════════════════════════════════════════════════════
   // 화면 전환
-  // ──────────────────────────────────────────────────
-  const VIEWS = ['v-main', 'v-manage', 'v-add'];
+  // ════════════════════════════════════════════════════════
+  const VIEWS = ['v-main', 'v-manage', 'v-add', 'v-settings'];
 
   async function nav(to) {
     VIEWS.forEach(id => document.getElementById(id).classList.add('hidden'));
     document.getElementById(to).classList.remove('hidden');
-    if (to === 'v-main')   await renderAllGrids();
-    if (to === 'v-manage') await renderManageList();
-    if (to === 'v-add')    resetAddView();
+    if (to === 'v-main')     await renderAllGrids();
+    if (to === 'v-manage')   await renderManageList();
+    if (to === 'v-add')      resetAddView();
+    if (to === 'v-settings') loadSettingsUI();
   }
 
+  // ════════════════════════════════════════════════════════
+  // 새로고침
+  // ════════════════════════════════════════════════════════
+  async function handleRefresh() {
+    if (refreshing) return;
+    refreshing = true;
+    document.querySelector('[onclick="handleRefresh()"]').style.opacity = '0.3';
+    await renderAllGrids();
+    document.querySelector('[onclick="handleRefresh()"]').style.opacity = '';
+    refreshing = false;
+  }
+
+  // ════════════════════════════════════════════════════════
+  // 관심종목 추가 — 탭 / 검색
+  // ════════════════════════════════════════════════════════
   function resetAddView() {
     document.getElementById('search-input').value = '';
     document.getElementById('search-results').innerHTML =
       `<p class="text-center text-gray-500 py-10 text-sm">종목명이나 코드를 입력하여 검색하세요</p>`;
     selected = {};
+    switchTab(searchTab);
   }
 
-  // ──────────────────────────────────────────────────
-  // 종목 검색
-  // ──────────────────────────────────────────────────
+  function switchTab(tab) {
+    searchTab = tab;
+    const korBtn = document.getElementById('tab-kor');
+    const usBtn  = document.getElementById('tab-us');
+    korBtn.className = `flex-1 text-sm py-2 rounded-xl transition-colors ${tab === 'kor' ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400'}`;
+    usBtn.className  = `flex-1 text-sm py-2 rounded-xl transition-colors ${tab === 'us'  ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400'}`;
+    document.getElementById('search-input').placeholder =
+      tab === 'kor' ? '종목명 또는 종목코드 (예: 삼성전자, 005930)' : '종목코드 입력 (예: AAPL, TSLA)';
+  }
+
   function debouncedSearch(q) {
     clearTimeout(searchTimer);
     if (!q.trim()) { resetAddView(); return; }
@@ -396,98 +755,173 @@
     if (!q.trim()) return;
     const el = document.getElementById('search-results');
     el.innerHTML = `<p class="text-center text-gray-500 py-10 text-sm">검색 중...</p>`;
-    try {
-      const r = await fetch(
-        `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=15&newsCount=0&listsCount=0`
-      );
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const j = await r.json();
-      const quotes = (j.quotes || []).filter(q =>
-        ['EQUITY', 'ETF', 'INDEX', 'MUTUALFUND'].includes(q.quoteType) && q.symbol
-      );
-
-      if (!quotes.length) {
-        el.innerHTML = `<p class="text-center text-gray-500 py-10 text-sm">검색 결과가 없습니다.</p>`;
-        return;
-      }
-
-      el.innerHTML = quotes.map(q => {
-        const name  = q.shortname || q.longname || q.symbol;
-        const exch  = q.exchDisp || q.exchange || '';
-        const rowId = `sr-${q.symbol.replace(/\W/g, '_')}`;
-        const chk   = selected[q.symbol] ? 'checked' : '';
-        const bdr   = selected[q.symbol] ? 'border-blue-600' : 'border-gray-800';
-        const sym   = q.symbol.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-        const nm    = name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-        return `
-          <label id="${rowId}"
-                 class="flex items-center gap-3 bg-gray-800 rounded-xl px-4 py-3 border ${bdr}
-                        cursor-pointer hover:border-gray-600 transition-colors fade-in">
-            <input type="checkbox" ${chk} class="w-4 h-4 accent-blue-500 shrink-0"
-                   onchange="toggleSelected('${sym}','${nm}',this)">
-            <div class="flex-1 min-w-0">
-              <p class="text-sm font-medium truncate">${h(name)}</p>
-              <p class="text-xs text-gray-500">${h(q.symbol)} · ${h(exch)}</p>
-            </div>
-          </label>`;
-      }).join('');
-
-    } catch (e) {
-      console.error('검색 오류:', e);
-      el.innerHTML = `<p class="text-center text-red-400 py-10 text-sm">검색 중 오류가 발생했습니다.<br><span class="text-gray-500 text-xs">네트워크 상태를 확인해주세요</span></p>`;
+    if (searchTab === 'kor') {
+      await searchKorean(q, el);
+    } else {
+      await searchOverseas(q, el);
     }
   }
 
-  function toggleSelected(symbol, name, cb) {
-    const rowId = `sr-${symbol.replace(/\W/g, '_')}`;
+  // 국내 주식 검색 (KIS CTPF1002R)
+  async function searchKorean(q, el) {
+    if (!KIS.ok) {
+      el.innerHTML = `<p class="text-center text-amber-400 py-10 text-sm">KIS API 설정이 필요합니다.</p>`;
+      return;
+    }
+    try {
+      const j = await kisGet(
+        '/uapi/domestic-stock/v1/quotations/search-stock-info',
+        'CTPF1002R',
+        {
+          PRDT_TYPE_CD: '300', MKET_ID_CD: 'ALL', SCRS_ITMT_SCN_CD: '1000',
+          PDNO: q, PRDT_NAME: q, SRT_DVSN: '0', SRT_ORD: '0',
+          CTX_AREA_FK100: '', CTX_AREA_NK100: '',
+        }
+      );
+      const items = (j?.output ?? []).slice(0, 20);
+      if (!items.length) { el.innerHTML = `<p class="text-center text-gray-500 py-10 text-sm">검색 결과가 없습니다.</p>`; return; }
+      el.innerHTML = items.map(s => {
+        const sym  = (s.shtn_pdno || s.pdno || '').trim();
+        const name = (s.prdt_abrv_name || s.prdt_name || sym).trim();
+        const mkt  = (s.mket_id_cd || '').trim();
+        const rowId = `sr-${safeId(sym)}`;
+        const chk   = selected[sym] ? 'checked' : '';
+        const bdr   = selected[sym] ? 'border-blue-600' : 'border-gray-800';
+        const safeSym  = sym.replace(/'/g, "\\'");
+        const safeName = name.replace(/'/g, "\\'");
+        return `
+          <label id="${rowId}" class="flex items-center gap-3 bg-gray-800 rounded-xl px-4 py-3 border ${bdr} cursor-pointer hover:border-gray-600 transition-colors fade-in">
+            <input type="checkbox" ${chk} class="w-4 h-4 accent-blue-500 shrink-0"
+                   onchange="toggleSelected('${safeSym}','${safeName}','KOR','kor-stock',this)">
+            <div class="flex-1 min-w-0">
+              <p class="text-sm font-medium truncate">${h(name)}</p>
+              <p class="text-xs text-gray-500">${h(sym)} · ${h(mkt)}</p>
+            </div>
+          </label>`;
+      }).join('');
+    } catch (e) {
+      el.innerHTML = `<p class="text-center text-red-400 py-10 text-sm">검색 오류가 발생했습니다.</p>`;
+    }
+  }
+
+  // 해외 주식 — 심볼 직접 조회 (KIS 해외주식 API)
+  async function searchOverseas(q, el) {
+    if (!KIS.ok) {
+      el.innerHTML = `<p class="text-center text-amber-400 py-10 text-sm">KIS API 설정이 필요합니다.</p>`;
+      return;
+    }
+    // NAS 먼저 시도, 없으면 NYS
+    const sym = q.toUpperCase().trim();
+    let data = await fetchUsStock(sym, 'NAS');
+    let excd = 'NAS';
+    if (!data) { data = await fetchUsStock(sym, 'NYS'); excd = 'NYS'; }
+    if (!data) {
+      el.innerHTML = `<p class="text-center text-gray-500 py-10 text-sm">종목을 찾을 수 없습니다.<br><span class="text-gray-600 text-xs">정확한 티커 심볼(예: AAPL)을 입력하세요</span></p>`;
+      return;
+    }
+    const rowId = `sr-${safeId(sym)}`;
+    const chk   = selected[sym] ? 'checked' : '';
+    const bdr   = selected[sym] ? 'border-blue-600' : 'border-gray-800';
+    const up    = data.pct >= 0;
+    el.innerHTML = `
+      <label id="${rowId}" class="flex items-center gap-3 bg-gray-800 rounded-xl px-4 py-3 border ${bdr} cursor-pointer hover:border-gray-600 transition-colors fade-in">
+        <input type="checkbox" ${chk} class="w-4 h-4 accent-blue-500 shrink-0"
+               onchange="toggleSelected('${sym}','${sym}','${excd}','us',this)">
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-medium">${h(sym)}</p>
+          <p class="text-xs text-gray-500">${excd}</p>
+        </div>
+        <div class="text-right text-xs">
+          <p class="text-white font-semibold">${data.price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+          <p class="${up ? 'text-red-400' : 'text-blue-400'}">${up ? '▲' : '▼'} ${Math.abs(data.pct).toFixed(2)}%</p>
+        </div>
+      </label>`;
+  }
+
+  function toggleSelected(symbol, name, market, type, cb) {
+    const rowId = `sr-${safeId(symbol)}`;
     const row   = document.getElementById(rowId);
     if (cb.checked) {
-      selected[symbol] = name;
-      row?.classList.remove('border-gray-800');
-      row?.classList.add('border-blue-600');
+      selected[symbol] = { name, market, type };
+      row?.classList.replace('border-gray-800', 'border-blue-600');
     } else {
       delete selected[symbol];
-      row?.classList.remove('border-blue-600');
-      row?.classList.add('border-gray-800');
+      row?.classList.replace('border-blue-600', 'border-gray-800');
     }
   }
 
   async function confirmAdd() {
-    const syms = Object.keys(selected);
-    if (!syms.length) { alert('추가할 종목을 선택하세요.'); return; }
-    for (const sym of syms) await addItem(sym, selected[sym]);
+    const entries = Object.entries(selected);
+    if (!entries.length) { alert('추가할 종목을 선택하세요.'); return; }
+    for (const [sym, info] of entries) {
+      await addItem(sym, info.name, info.market, info.type);
+    }
     await nav('v-manage');
   }
 
-  // ──────────────────────────────────────────────────
+  // ════════════════════════════════════════════════════════
   // 삭제
-  // ──────────────────────────────────────────────────
+  // ════════════════════════════════════════════════════════
   async function handleDelete(btn) {
     await removeItem(btn.dataset.id);
     await renderManageList();
   }
 
-  // ──────────────────────────────────────────────────
-  // 새로고침
-  // ──────────────────────────────────────────────────
-  async function handleRefresh() {
-    if (refreshing) return;
-    refreshing = true;
-    const btn = document.querySelector('[onclick="handleRefresh()"]');
-    if (btn) btn.style.opacity = '0.4';
-    await renderAllGrids();
-    if (btn) btn.style.opacity = '';
-    refreshing = false;
+  // ════════════════════════════════════════════════════════
+  // KIS 설정 UI
+  // ════════════════════════════════════════════════════════
+  function loadSettingsUI() {
+    document.getElementById('cfg-key').value    = KIS.key;
+    document.getElementById('cfg-secret').value = KIS.secret;
+    updateAccountTypeUI(KIS.isReal);
   }
 
-  async function autoRefresh() {
-    const main = document.getElementById('v-main');
-    if (!main.classList.contains('hidden')) await renderAllGrids();
+  function setAccountType(isReal) {
+    KIS.isReal = isReal;
+    updateAccountTypeUI(isReal);
   }
 
-  // ──────────────────────────────────────────────────
-  // XSS 방어용 HTML 이스케이프
-  // ──────────────────────────────────────────────────
+  function updateAccountTypeUI(isReal) {
+    const realBtn = document.getElementById('btn-real');
+    const mockBtn = document.getElementById('btn-mock');
+    realBtn.className = `flex-1 text-sm py-2 rounded-xl transition-colors ${isReal  ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400'}`;
+    mockBtn.className = `flex-1 text-sm py-2 rounded-xl transition-colors ${!isReal ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400'}`;
+  }
+
+  function toggleSecretVisibility() {
+    const el = document.getElementById('cfg-secret');
+    el.type = el.type === 'password' ? 'text' : 'password';
+  }
+
+  async function saveSettings() {
+    KIS.key    = document.getElementById('cfg-key').value.trim();
+    KIS.secret = document.getElementById('cfg-secret').value.trim();
+    // 인증 캐시 초기화
+    _token = null; _tokenExp = 0; _approvalKey = null;
+    _ws?.close(); _ws = null;
+    _wsSubs.clear();
+    showBannerIfNeeded();
+    if (KIS.ok) {
+      await kisInitAuth();
+      kisConnectWS();
+    }
+    await nav('v-main');
+  }
+
+  function clearSettings() {
+    if (!confirm('KIS 설정을 초기화하시겠습니까?')) return;
+    localStorage.removeItem('kis_key');
+    localStorage.removeItem('kis_secret');
+    localStorage.removeItem('kis_real');
+    _token = null; _tokenExp = 0; _approvalKey = null;
+    _ws?.close(); _ws = null; _wsSubs.clear();
+    loadSettingsUI();
+    showBannerIfNeeded();
+  }
+
+  // ════════════════════════════════════════════════════════
+  // XSS 방어
+  // ════════════════════════════════════════════════════════
   function h(s) {
     return String(s)
       .replace(/&/g,'&amp;').replace(/</g,'&lt;')
